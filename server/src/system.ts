@@ -1,4 +1,5 @@
 import si from 'systeminformation';
+import os from 'os';
 import { saveMetrics } from './db';
 
 // Cache static system data so we don't query it every second
@@ -24,14 +25,14 @@ export async function getSystemMetrics() {
     };
   }
 
-  const [cpuLoad, mem, networkStats, fsSize, loadAvg, processes] = await Promise.all([
+  const [cpuLoad, mem, networkStats, fsSize, processes] = await Promise.all([
     si.currentLoad(),
     si.mem(),
     si.networkStats(),
     si.fsSize(),
-    si.load(),
     si.processes()
   ]);
+  const loadAvg = os.loadavg();
 
   const timestamp = new Date().toISOString();
 
@@ -60,7 +61,7 @@ export async function getSystemMetrics() {
       rx_sec: networkStats.reduce((acc, net) => acc + net.rx_sec, 0),
       tx_sec: networkStats.reduce((acc, net) => acc + net.tx_sec, 0)
     },
-    loadAverage: [loadAvg.avg1, loadAvg.avg5, loadAvg.avg15],
+    loadAverage: loadAvg,
     uptime: si.time().uptime,
     processes: processes.list.slice(0, 50).map(p => ({
       pid: p.pid,
