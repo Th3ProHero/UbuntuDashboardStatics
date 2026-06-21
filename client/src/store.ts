@@ -22,11 +22,19 @@ interface SystemMetrics {
     percent: number;
     swapTotal: number;
     swapUsed: number;
+    swapPercent: number;
   };
   disk: {
-    total: number;
-    used: number;
-    percent: number;
+    root: {
+      total: number;
+      used: number;
+      percent: number;
+    };
+    docker: {
+      total: number;
+      used: number;
+      percent: number;
+    };
     filesystems: any[];
   };
   network: {
@@ -36,6 +44,7 @@ interface SystemMetrics {
   loadAverage: number[];
   uptime: number;
   processes: any[];
+  zombieCount: number;
 }
 
 interface Container {

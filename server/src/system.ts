@@ -45,16 +45,24 @@ export async function getSystemMetrics() {
     },
     memory: {
       total: mem.total,
-      used: mem.used,
-      free: mem.free,
-      percent: parseFloat(((mem.used / mem.total) * 100).toFixed(2)),
+      used: mem.total - (mem.available || mem.free),
+      free: mem.available || mem.free,
+      percent: parseFloat((((mem.total - (mem.available || mem.free)) / mem.total) * 100).toFixed(2)),
       swapTotal: mem.swaptotal,
-      swapUsed: mem.swapused
+      swapUsed: mem.swapused,
+      swapPercent: mem.swaptotal > 0 ? parseFloat(((mem.swapused / mem.swaptotal) * 100).toFixed(2)) : 0
     },
     disk: {
-      total: fsSize.find((fs: any) => fs.mount === '/hostfs' || fs.mount === '/')?.size || 0,
-      used: fsSize.find((fs: any) => fs.mount === '/hostfs' || fs.mount === '/')?.used || 0,
-      percent: fsSize.find((fs: any) => fs.mount === '/hostfs' || fs.mount === '/')?.use || 0,
+      root: {
+        total: fsSize.find((fs: any) => fs.mount === '/host/root' || fs.mount === '/')?.size || 0,
+        used: fsSize.find((fs: any) => fs.mount === '/host/root' || fs.mount === '/')?.used || 0,
+        percent: fsSize.find((fs: any) => fs.mount === '/host/root' || fs.mount === '/')?.use || 0,
+      },
+      docker: {
+        total: fsSize.find((fs: any) => fs.mount === '/')?.size || 0,
+        used: fsSize.find((fs: any) => fs.mount === '/')?.used || 0,
+        percent: fsSize.find((fs: any) => fs.mount === '/')?.use || 0,
+      },
       filesystems: fsSize
     },
     network: {
@@ -69,8 +77,10 @@ export async function getSystemMetrics() {
       cpu: p.cpu,
       mem: p.mem,
       user: p.user,
-      started: p.started
-    }))
+      started: p.started,
+      state: p.state
+    })),
+    zombieCount: processes.list.filter(p => p.state === 'Z' || p.state === 'zombie').length
   };
 
   // Asynchronously save to DB

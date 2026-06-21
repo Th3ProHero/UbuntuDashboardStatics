@@ -5,11 +5,14 @@ services:
     build: .
     container_name: dashboard-ubuntu
     restart: unless-stopped
-    ports:
-      - "9091:9091"
+    network_mode: "host"
+    pid: "host"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data
+      - /:/host/root:ro
+      - /proc:/proc:ro
+      - /sys:/sys:ro
+      - /etc/os-release:/etc/os-release:ro
     environment:
       - PORT=9091
-    # network_mode: "host" # Uncomment if host networking is absolutely needed to see all local interfaces correctly via systeminformation
