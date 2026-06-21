@@ -52,9 +52,9 @@ export async function getSystemMetrics() {
       swapUsed: mem.swapused
     },
     disk: {
-      total: fsSize.reduce((acc, fs) => acc + fs.size, 0),
-      used: fsSize.reduce((acc, fs) => acc + fs.used, 0),
-      percent: parseFloat((fsSize.reduce((acc, fs) => acc + fs.used, 0) / fsSize.reduce((acc, fs) => acc + fs.size, 0) * 100).toFixed(2)),
+      total: fsSize.find((fs: any) => fs.mount === '/hostfs' || fs.mount === '/')?.size || 0,
+      used: fsSize.find((fs: any) => fs.mount === '/hostfs' || fs.mount === '/')?.used || 0,
+      percent: fsSize.find((fs: any) => fs.mount === '/hostfs' || fs.mount === '/')?.use || 0,
       filesystems: fsSize
     },
     network: {
