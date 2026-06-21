@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { MetricCard } from '../components/MetricCard';
-import { Cpu, MemoryStick, HardDrive, Network, Clock, Thermometer, Container, AlertCircle } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { Cpu, MemoryStick, HardDrive, Network, Clock, Container, AlertCircle } from 'lucide-react';
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 export default function Dashboard() {
   const metrics = useStore(state => state.metrics);
@@ -168,7 +168,7 @@ export default function Dashboard() {
                   contentStyle={{ backgroundColor: 'rgba(20, 20, 25, 0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
                   itemStyle={{ color: '#e2e8f0' }}
                   labelStyle={{ display: 'none' }}
-                  formatter={(value: number) => formatBytes(value)}
+                  formatter={(value: any) => formatBytes(value as number)}
                 />
                 <Area type="monotone" dataKey="network_rx" name="Download" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorRx)" isAnimationActive={false} />
                 <Area type="monotone" dataKey="network_tx" name="Upload" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#colorTx)" isAnimationActive={false} />

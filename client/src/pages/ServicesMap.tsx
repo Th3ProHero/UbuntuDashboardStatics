@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
-import ReactFlow, { Background, Controls, Node, Edge } from 'reactflow';
+import { useMemo } from 'react';
+import ReactFlow, { Background, Controls } from 'reactflow';
+import type { Node, Edge } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useStore } from '../store';
 
@@ -84,7 +85,7 @@ export default function ServicesMap() {
       </div>
       <div className="flex-1 w-full bg-black/20">
         <ReactFlow nodes={nodes} edges={edges} fitView>
-          <Background color="#ffffff" gap={16} opacity={0.05} />
+          <Background color="#ffffff" gap={16} style={{ opacity: 0.05 }} />
           <Controls className="bg-panel border border-panelBorder fill-white" />
         </ReactFlow>
       </div>

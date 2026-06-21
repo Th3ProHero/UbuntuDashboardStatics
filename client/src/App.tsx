@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Activity, Server, Box, Network, HardDrive, AlertTriangle, Cpu } from 'lucide-react';
+import { Activity, Server, Box, Network, AlertTriangle, Cpu } from 'lucide-react';
 import { io } from 'socket.io-client';
 import Dashboard from './pages/Dashboard';
 import DockerSection from './pages/DockerSection';
