@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  dashboard:
+    build: .
+    container_name: dashboard-ubuntu
+    restart: unless-stopped
+    ports:
+      - "9091:9091"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+    environment:
+      - PORT=9091
+    # network_mode: "host" # Uncomment if host networking is absolutely needed to see all local interfaces correctly via systeminformation

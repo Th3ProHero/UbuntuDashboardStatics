@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-slate-200 antialiased overflow-hidden;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-panel backdrop-blur-xl border border-panelBorder rounded-xl shadow-2xl;
+  }
+  
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-md border border-white/10 rounded-lg hover:bg-white/10 transition-all duration-300;
+  }
+
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+  .status-dot.healthy {
+    @apply bg-success shadow-[0_0_8px_rgba(16,185,129,0.8)];
+  }
+  .status-dot.warning {
+    @apply bg-warning shadow-[0_0_8px_rgba(245,158,11,0.8)];
+  }
+  .status-dot.danger {
+    @apply bg-danger shadow-[0_0_8px_rgba(239,68,68,0.8)];
+  }
+}
+
+/* Custom Scrollbar for sleek UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
