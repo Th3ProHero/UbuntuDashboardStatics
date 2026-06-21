@@ -106,7 +106,7 @@ export default function Dashboard() {
           <div><span className="text-slate-500 block mb-1">CPU Model</span><span className="font-medium text-slate-200">{metrics.static.cpuModel}</span></div>
           <div><span className="text-slate-500 block mb-1">CPU Threads</span><span className="font-medium text-slate-200">{metrics.static.cpuThreads}</span></div>
           <div><span className="text-slate-500 block mb-1">Total RAM</span><span className="font-medium text-slate-200">{formatBytes(metrics.memory.total)}</span></div>
-          <div><span className="text-slate-500 block mb-1">Total Storage</span><span className="font-medium text-slate-200">{formatBytes(metrics.static.totalStorage)}</span></div>
+          <div><span className="text-slate-500 block mb-1">Total Storage</span><span className="font-medium text-slate-200">{formatBytes(metrics.disk.used)} / {formatBytes(metrics.disk.total)}</span></div>
         </div>
       </div>
 
