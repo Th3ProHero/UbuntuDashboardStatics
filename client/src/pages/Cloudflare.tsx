@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Globe, Shield, AlertCircle } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:9091';
+const getApiUrl = () => window.location.hostname === 'localhost' ? 'http://localhost:9091' : '';
 
 export default function Cloudflare() {
   const [tunnels, setTunnels] = useState<any[]>([]);
@@ -13,8 +13,8 @@ export default function Cloudflare() {
     const fetchData = async () => {
       try {
         const [tunnelsRes, zonesRes] = await Promise.all([
-          fetch(`${API_URL}/api/cloudflare/tunnels`),
-          fetch(`${API_URL}/api/cloudflare/zones`)
+          fetch(`${getApiUrl()}/api/cloudflare/tunnels`),
+          fetch(`${getApiUrl()}/api/cloudflare/zones`)
         ]);
 
         if (!tunnelsRes.ok || !zonesRes.ok) {

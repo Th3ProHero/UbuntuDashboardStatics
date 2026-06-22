@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store';
 import { Search, ShieldAlert } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:9091';
+const getApiUrl = () => window.location.hostname === 'localhost' ? 'http://localhost:9091' : '';
 
 export default function ProcessExplorer() {
   const metrics = useStore(state => state.metrics);
@@ -16,7 +16,7 @@ export default function ProcessExplorer() {
     
     setKillingPid(pid);
     try {
-      const res = await fetch(`${API_URL}/api/system/process/${pid}/kill`, { method: 'POST' });
+      const res = await fetch(`${getApiUrl()}/api/system/process/${pid}/kill`, { method: 'POST' });
       if (!res.ok) {
         const data = await res.json();
         alert(data.error || 'Failed to kill process');
