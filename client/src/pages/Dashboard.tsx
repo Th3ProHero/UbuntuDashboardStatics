@@ -1,13 +1,38 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { MetricCard } from '../components/MetricCard';
-import { Cpu, MemoryStick, HardDrive, Network, Container, AlertCircle } from 'lucide-react';
+import { Cpu, MemoryStick, HardDrive, Network, Container, AlertCircle, Terminal, X, RefreshCw } from 'lucide-react';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { io } from 'socket.io-client';
+
+const socket = io(window.location.hostname === 'localhost' ? 'http://localhost:9091' : '/');
 
 export default function Dashboard() {
   const metrics = useStore(state => state.metrics);
   const containers = useStore(state => state.containers);
   const [history, setHistory] = useState<any[]>([]);
+  
+  // Server Update Modal State
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateLogs, setUpdateLogs] = useState<string[]>([]);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    socket.on('server_update_logs', (data) => {
+      setUpdateLogs(prev => [...prev, data]);
+    });
+
+    return () => {
+      socket.off('server_update_logs');
+    };
+  }, []);
+
+  const startServerUpdate = () => {
+    if (!confirm('Are you sure you want to update the host server? This will run apt update && apt upgrade.')) return;
+    setUpdateLogs([]);
+    setIsUpdating(true);
+    socket.emit('update_server');
+  };
 
   useEffect(() => {
     // Fetch historical data on mount
@@ -100,7 +125,16 @@ export default function Dashboard() {
 
       {/* System Overview */}
       <div className="glass-panel p-6">
-        <h2 className="text-lg font-medium text-white mb-4">System Overview</h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-medium text-white">System Overview</h2>
+          <button 
+            onClick={() => setShowUpdateModal(true)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-accent/10 text-accent hover:bg-accent hover:text-white rounded transition-colors text-sm font-medium border border-accent/20 hover:border-accent"
+          >
+            <Terminal size={16} />
+            System Update
+          </button>
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div><span className="text-slate-500 block mb-1">Hostname</span><span className="font-medium text-slate-200">{metrics.static.hostname}</span></div>
           <div><span className="text-slate-500 block mb-1">OS</span><span className="font-medium text-slate-200">{metrics.static.ubuntuVersion}</span></div>
@@ -180,6 +214,48 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Update Server Modal */}
+      {showUpdateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-background border border-panelBorder rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[80vh] overflow-hidden">
+            <div className="p-4 border-b border-panelBorder flex justify-between items-center bg-white/5">
+              <div className="flex items-center gap-2">
+                <Terminal size={20} className="text-accent" />
+                <h3 className="font-medium text-lg">Host Server Update</h3>
+              </div>
+              <button onClick={() => setShowUpdateModal(false)} className="text-slate-400 hover:text-white transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-4 bg-black/50 flex-1 overflow-auto font-mono text-xs text-slate-300">
+              {updateLogs.length === 0 ? (
+                <div className="text-slate-500 italic">Ready to run 'apt-get update &amp;&amp; apt-get upgrade -y'...</div>
+              ) : (
+                <div className="whitespace-pre-wrap">{updateLogs.join('')}</div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-panelBorder bg-white/5 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowUpdateModal(false)}
+                className="px-4 py-2 rounded text-slate-300 hover:bg-white/10 transition-colors text-sm"
+              >
+                Close
+              </button>
+              <button 
+                onClick={startServerUpdate}
+                disabled={isUpdating}
+                className="px-4 py-2 bg-accent text-white rounded hover:bg-accent/90 transition-colors text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+              >
+                {isUpdating ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                Start Update
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,8 @@ import path from 'path';
 import { getSystemMetrics, getHistoricalMetrics } from './system';
 import { getDockerContainers, performDockerAction } from './docker';
 import { initializeDatabase } from './db';
+import { getCloudflareTunnels, getCloudflareZones } from './cloudflare';
+import { spawn } from 'child_process';
 
 const app = express();
 const server = createServer(app);
@@ -44,6 +46,38 @@ app.post('/api/docker/:id/:action', async (req, res) => {
   }
 });
 
+app.post('/api/system/process/:pid/kill', (req, res) => {
+  try {
+    const pid = parseInt(req.params.pid, 10);
+    if (isNaN(pid)) throw new Error('Invalid PID');
+    
+    // Attempt to kill process using node's process.kill
+    // Signal 9 is SIGKILL
+    process.kill(pid, 'SIGKILL');
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to kill process' });
+  }
+});
+
+app.get('/api/cloudflare/tunnels', async (req, res) => {
+  try {
+    const tunnels = await getCloudflareTunnels();
+    res.json(tunnels);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/cloudflare/zones', async (req, res) => {
+  try {
+    const zones = await getCloudflareZones();
+    res.json(zones);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Serve frontend for all other routes
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
@@ -52,6 +86,28 @@ app.use((req, res) => {
 // Socket.IO for real-time updates
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
+  
+  socket.on('update_server', () => {
+    console.log('Server update requested');
+    // Using chroot to run apt within the mounted host root
+    // Requires privileged container mode
+    const updateProcess = spawn('chroot', ['/host/root', 'apt-get', 'update', '&&', 'apt-get', 'upgrade', '-y'], {
+      shell: true
+    });
+
+    updateProcess.stdout.on('data', (data) => {
+      socket.emit('server_update_logs', data.toString());
+    });
+
+    updateProcess.stderr.on('data', (data) => {
+      socket.emit('server_update_logs', data.toString());
+    });
+
+    updateProcess.on('close', (code) => {
+      socket.emit('server_update_logs', `\n--- Update process exited with code ${code} ---\n`);
+    });
+  });
+
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
   });

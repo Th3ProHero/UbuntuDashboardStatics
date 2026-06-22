@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import DockerSection from './pages/DockerSection';
 import ServicesMap from './pages/ServicesMap';
 import ProcessExplorer from './pages/ProcessExplorer';
+import Cloudflare from './pages/Cloudflare';
 import { useStore } from './store';
 
 // Connecting to the backend running on the same host
@@ -53,6 +54,7 @@ function App() {
             <NavItem to="/docker" icon={<Box size={20} />} label="Docker Containers" />
             <NavItem to="/services" icon={<Network size={20} />} label="Services Map" />
             <NavItem to="/processes" icon={<Cpu size={20} />} label="Process Explorer" />
+            <NavItem to="/cloudflare" icon={<Network size={20} />} label="Cloudflare" />
             {/* Additional Nav Items could go here */}
           </nav>
 
@@ -85,6 +87,7 @@ function App() {
               <Route path="/docker" element={<DockerSection />} />
               <Route path="/services" element={<ServicesMap />} />
               <Route path="/processes" element={<ProcessExplorer />} />
+              <Route path="/cloudflare" element={<Cloudflare />} />
             </Routes>
           </main>
           

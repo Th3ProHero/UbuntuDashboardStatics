@@ -1,10 +1,32 @@
 import { useState } from 'react';
 import { useStore } from '../store';
-import { Search } from 'lucide-react';
+import { Search, ShieldAlert } from 'lucide-react';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:9091';
 
 export default function ProcessExplorer() {
   const metrics = useStore(state => state.metrics);
   const [searchTerm, setSearchTerm] = useState('');
+  const [killingPid, setKillingPid] = useState<number | null>(null);
+
+  const handleKillProcess = async (pid: number) => {
+    if (!confirm(`Are you sure you want to kill process ${pid}? This may cause system instability.`)) {
+      return;
+    }
+    
+    setKillingPid(pid);
+    try {
+      const res = await fetch(`${API_URL}/api/system/process/${pid}/kill`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || 'Failed to kill process');
+      }
+    } catch (err) {
+      alert('Network error while killing process');
+    } finally {
+      setKillingPid(null);
+    }
+  };
 
   if (!metrics) return null;
 
@@ -43,6 +65,7 @@ export default function ProcessExplorer() {
               <th className="p-4 font-medium text-right">CPU %</th>
               <th className="p-4 font-medium text-right">RAM %</th>
               <th className="p-4 font-medium text-right">Started</th>
+              <th className="p-4 font-medium text-right">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-panelBorder">
@@ -58,11 +81,22 @@ export default function ProcessExplorer() {
                 </td>
                 <td className="p-4 text-right text-slate-300">{p.mem.toFixed(1)}%</td>
                 <td className="p-4 text-right text-slate-400">{p.started}</td>
+                <td className="p-4 text-right">
+                  <button 
+                    onClick={() => handleKillProcess(p.pid)}
+                    disabled={killingPid === p.pid}
+                    className="p-1.5 text-xs bg-danger/10 text-danger hover:bg-danger hover:text-white rounded transition-colors disabled:opacity-50 flex items-center justify-center gap-1 ml-auto"
+                    title="Kill Process"
+                  >
+                    <ShieldAlert size={14} />
+                    {killingPid === p.pid ? '...' : 'Kill'}
+                  </button>
+                </td>
               </tr>
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-8 text-center text-slate-500">No processes found.</td>
+                <td colSpan={7} className="p-8 text-center text-slate-500">No processes found.</td>
               </tr>
             )}
           </tbody>
