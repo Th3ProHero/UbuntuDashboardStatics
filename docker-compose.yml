@@ -17,3 +17,5 @@ services:
       - /etc/os-release:/etc/os-release:ro
     environment:
       - PORT=9091
+    env_file:
+      - .env
