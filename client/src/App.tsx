@@ -43,10 +43,20 @@ function App() {
         {/* Sidebar */}
         <div className="w-64 glass-panel m-4 flex flex-col z-10 border-r-0">
           <div className="p-6 flex items-center space-x-3 border-b border-panelBorder">
-            <div className="w-8 h-8 rounded bg-accent flex items-center justify-center">
-              <Server size={20} className="text-white" />
+            <div className="relative w-10 h-10 flex items-center justify-center shrink-0">
+              {/* Hacker background animations */}
+              <div className="absolute inset-0 rounded bg-green-500/30 animate-pulse blur-md"></div>
+              <div className="absolute inset-1 rounded bg-green-400/40 animate-ping opacity-50"></div>
+              <div className="absolute inset-0 rounded overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-[2px] bg-green-400 shadow-[0_0_8px_rgba(74,222,128,1)] animate-bounce"></div>
+              </div>
+              
+              {/* Icon Container */}
+              <div className="relative w-8 h-8 rounded bg-black/90 border border-green-500/50 flex items-center justify-center z-10">
+                <Server size={18} className="text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,1)]" />
+              </div>
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-white">NOC<span className="text-accent font-light">Dash</span></h1>
+            <h1 className="text-lg font-bold tracking-tight text-white truncate">HeroServer<span className="text-green-400 font-light">Status</span></h1>
           </div>
           
           <nav className="flex-1 p-4 space-y-2">

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Globe, Shield, AlertCircle } from 'lucide-react';
+import { Globe, Shield, AlertCircle, ChevronDown, ChevronRight, Server } from 'lucide-react';
 
 const getApiUrl = () => window.location.hostname === 'localhost' ? 'http://localhost:9091' : '';
 
@@ -8,6 +8,36 @@ export default function Cloudflare() {
   const [zones, setZones] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // DNS Records state
+  const [expandedZone, setExpandedZone] = useState<string | null>(null);
+  const [dnsRecords, setDnsRecords] = useState<Record<string, any[]>>({});
+  const [loadingDns, setLoadingDns] = useState<Record<string, boolean>>({});
+
+  const toggleZone = async (zoneId: string) => {
+    if (expandedZone === zoneId) {
+      setExpandedZone(null);
+      return;
+    }
+    
+    setExpandedZone(zoneId);
+    
+    // Fetch if we haven't already
+    if (!dnsRecords[zoneId]) {
+      setLoadingDns(prev => ({ ...prev, [zoneId]: true }));
+      try {
+        const res = await fetch(`${getApiUrl()}/api/cloudflare/zones/${zoneId}/dns_records`);
+        if (res.ok) {
+          const data = await res.json();
+          setDnsRecords(prev => ({ ...prev, [zoneId]: data }));
+        }
+      } catch (err) {
+        console.error("Failed to load DNS records", err);
+      } finally {
+        setLoadingDns(prev => ({ ...prev, [zoneId]: false }));
+      }
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -127,17 +157,65 @@ export default function Cloudflare() {
             ) : (
               <div className="space-y-4">
                 {zones.map((zone) => (
-                  <div key={zone.id} className="p-4 rounded-lg bg-white/5 border border-panelBorder hover:bg-white/10 transition-colors">
-                    <div className="flex justify-between items-center mb-2">
-                      <div className="font-medium text-slate-200">{zone.name}</div>
+                  <div key={zone.id} className="rounded-lg bg-white/5 border border-panelBorder overflow-hidden">
+                    <div 
+                      className="p-4 flex justify-between items-center cursor-pointer hover:bg-white/10 transition-colors"
+                      onClick={() => toggleZone(zone.id)}
+                    >
+                      <div className="flex items-center gap-2">
+                        {expandedZone === zone.id ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
+                        <div className="font-medium text-slate-200">{zone.name}</div>
+                      </div>
                       <span className={`px-2 py-1 rounded text-xs font-medium ${zone.status === 'active' ? 'bg-success/20 text-success' : 'bg-warning/20 text-warning'}`}>
                         {zone.status.toUpperCase()}
                       </span>
                     </div>
-                    <div className="text-xs text-slate-400 flex justify-between items-center">
-                      <span>Plan: {zone.plan?.name || 'Free'}</span>
-                      <span>Dev Mode: <span className={zone.development_mode ? 'text-warning' : 'text-slate-500'}>{zone.development_mode ? 'ON' : 'OFF'}</span></span>
-                    </div>
+                    
+                    {expandedZone === zone.id && (
+                      <div className="p-4 pt-0 border-t border-white/5 bg-black/20">
+                        <div className="text-xs text-slate-400 flex justify-between items-center mb-3 mt-3">
+                          <span>Plan: {zone.plan?.name || 'Free'}</span>
+                          <span>Dev Mode: <span className={zone.development_mode ? 'text-warning' : 'text-slate-500'}>{zone.development_mode ? 'ON' : 'OFF'}</span></span>
+                        </div>
+                        
+                        <div className="mt-4">
+                          <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-2">
+                            <Server size={14} /> DNS Records
+                          </h4>
+                          {loadingDns[zone.id] ? (
+                            <div className="text-xs text-slate-500 animate-pulse py-2">Loading records...</div>
+                          ) : !dnsRecords[zone.id] || dnsRecords[zone.id].length === 0 ? (
+                            <div className="text-xs text-slate-500 py-2">No DNS records found.</div>
+                          ) : (
+                            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                              {dnsRecords[zone.id].map(record => (
+                                <div key={record.id} className="text-xs bg-white/5 p-2 rounded flex items-center justify-between group">
+                                  <div className="flex items-center gap-2 truncate">
+                                    <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] ${
+                                      record.type === 'A' ? 'bg-blue-500/20 text-blue-400' :
+                                      record.type === 'CNAME' ? 'bg-purple-500/20 text-purple-400' :
+                                      record.type === 'TXT' ? 'bg-slate-500/20 text-slate-400' :
+                                      'bg-gray-500/20 text-gray-400'
+                                    }`}>
+                                      {record.type}
+                                    </span>
+                                    <span className="font-medium text-slate-300 truncate max-w-[120px]" title={record.name}>{record.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className="text-slate-400 font-mono text-[10px] truncate max-w-[100px]" title={record.content}>
+                                      {record.content.length > 20 ? record.content.substring(0, 20) + '...' : record.content}
+                                    </span>
+                                    {record.proxied && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shadow-[0_0_5px_rgba(251,146,60,0.8)]" title="Proxied by Cloudflare"></span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

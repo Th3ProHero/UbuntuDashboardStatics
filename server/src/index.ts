@@ -6,7 +6,7 @@ import path from 'path';
 import { getSystemMetrics, getHistoricalMetrics } from './system';
 import { getDockerContainers, performDockerAction } from './docker';
 import { initializeDatabase } from './db';
-import { getCloudflareTunnels, getCloudflareZones } from './cloudflare';
+import { getCloudflareTunnels, getCloudflareZones, getCloudflareDnsRecords } from './cloudflare';
 import { spawn } from 'child_process';
 
 const app = express();
@@ -73,6 +73,15 @@ app.get('/api/cloudflare/zones', async (req, res) => {
   try {
     const zones = await getCloudflareZones();
     res.json(zones);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/cloudflare/zones/:zoneId/dns_records', async (req, res) => {
+  try {
+    const records = await getCloudflareDnsRecords(req.params.zoneId);
+    res.json(records);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

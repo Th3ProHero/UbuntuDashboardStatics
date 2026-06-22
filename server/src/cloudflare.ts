@@ -42,3 +42,23 @@ export async function getCloudflareZones() {
   const data = await response.json();
   return data.result || [];
 }
+
+export async function getCloudflareDnsRecords(zoneId: string) {
+  if (!CF_API_TOKEN) {
+    throw new Error('Cloudflare API Token not configured');
+  }
+
+  const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`, {
+    headers: {
+      'Authorization': `Bearer ${CF_API_TOKEN}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Cloudflare API Error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.result || [];
+}
