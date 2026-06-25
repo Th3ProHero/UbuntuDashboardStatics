@@ -7,7 +7,12 @@ import { getSystemMetrics, getHistoricalMetrics } from './system';
 import { getDockerContainers, performDockerAction } from './docker';
 import { initializeDatabase } from './db';
 import { getCloudflareTunnels, getCloudflareZones, getCloudflareDnsRecords } from './cloudflare';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
+
+// Helper: send a signal to a PID via the system kill binary (works cross-user in privileged containers)
+function shellKill(pid: number, signal: string): void {
+  execSync(`kill -${signal} ${pid}`);
+}
 
 const app = express();
 const server = createServer(app);
@@ -50,7 +55,7 @@ app.post('/api/system/process/:pid/kill', (req, res) => {
   try {
     const pid = parseInt(req.params.pid, 10);
     if (isNaN(pid)) throw new Error('Invalid PID');
-    process.kill(pid, 'SIGKILL');
+    shellKill(pid, 'SIGKILL');
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to kill process' });
@@ -68,17 +73,24 @@ app.post('/api/system/zombie/clean', (req, res) => {
   // Try SIGHUP on parent first (asks parent to reload/reap children)
   if (ppid && ppid > 1) {
     try {
-      process.kill(ppid, 'SIGHUP');
+      shellKill(ppid, 'HUP');
       console.log(`[zombie] Sent SIGHUP to parent ${ppid} of zombie ${pid} (${name})`);
       return res.json({ success: true, method: 'SIGHUP', target: ppid });
     } catch (err: any) {
-      console.warn(`[zombie] SIGHUP on parent ${ppid} failed: ${err.message}. Falling back to SIGKILL on zombie.`);
+      console.warn(`[zombie] SIGHUP on parent ${ppid} failed: ${err.message}. Falling back to SIGKILL.`);
     }
   }
 
-  // Fallback: SIGKILL on the zombie itself (may not work for true zombie but cleans up)
+  // Fallback: SIGKILL on parent or zombie itself
   try {
-    process.kill(pid, 'SIGKILL');
+    // Try killing the parent with SIGKILL first
+    if (ppid && ppid > 1) {
+      shellKill(ppid, '9');
+      console.log(`[zombie] Sent SIGKILL to parent ${ppid} of zombie ${pid} (${name})`);
+      return res.json({ success: true, method: 'SIGKILL', target: ppid });
+    }
+    // Last resort: kill the zombie pid directly
+    shellKill(pid, '9');
     console.log(`[zombie] Sent SIGKILL to zombie pid ${pid} (${name})`);
     return res.json({ success: true, method: 'SIGKILL', target: pid });
   } catch (err: any) {
@@ -103,15 +115,21 @@ app.post('/api/system/zombie/clean-all', async (req, res) => {
     if (z.ppid && z.ppid > 1 && !processedPpids.has(z.ppid)) {
       processedPpids.add(z.ppid);
       try {
-        process.kill(z.ppid, 'SIGHUP');
+        shellKill(z.ppid, 'HUP');
         results.push({ pid: z.pid, ppid: z.ppid, method: 'SIGHUP', success: true });
         continue;
-      } catch (_) { /* fall through */ }
+      } catch (_) { /* fall through to SIGKILL */ }
+      // SIGHUP failed — try SIGKILL on the parent
+      try {
+        shellKill(z.ppid, '9');
+        results.push({ pid: z.pid, ppid: z.ppid, method: 'SIGKILL_PARENT', success: true });
+        continue;
+      } catch (_) { /* fall through to zombie kill */ }
     }
-    // Fallback SIGKILL
+    // Last resort: SIGKILL on the zombie pid itself
     try {
-      process.kill(z.pid, 'SIGKILL');
-      results.push({ pid: z.pid, method: 'SIGKILL', success: true });
+      shellKill(z.pid, '9');
+      results.push({ pid: z.pid, method: 'SIGKILL_ZOMBIE', success: true });
     } catch (err: any) {
       results.push({ pid: z.pid, success: false, error: err.message });
     }
