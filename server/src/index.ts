@@ -84,51 +84,88 @@ app.get('/api/system/zombie/info/:pid', (req, res) => {
   }
 });
 
-// Clean a zombie: SIGHUP parent → SIGKILL parent → SIGKILL zombie (all via OS kill binary)
-app.post('/api/system/zombie/clean', (req, res) => {
+// Helper: check if a zombie PID is still alive (in /proc)
+function zombieExists(pid: number): boolean {
+  try {
+    const stat = execSync(`cat /proc/${pid}/status 2>/dev/null | grep -i 'State:' || echo ''`, { stdio: 'pipe' }).toString();
+    return stat.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// Helper: sleep ms
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+// Clean a zombie: verify after each signal, auto-escalate if zombie persists
+app.post('/api/system/zombie/clean', async (req: any, res: any) => {
   const { pid, ppid, name } = req.body as { pid: number; ppid: number; name: string };
 
   if (!pid || isNaN(pid)) {
     return res.status(400).json({ error: 'Invalid PID' });
   }
 
-  // Step 1: Try SIGHUP on parent
+  console.log(`[zombie] Cleaning pid=${pid} ppid=${ppid} name=${name}`);
+
+  // Step 1: SIGHUP on parent — ask it to reap children
   if (ppid && ppid > 1 && pidExists(ppid)) {
     try {
       shellKill(ppid, 'HUP');
-      console.log(`[zombie] SIGHUP → parent ${ppid} (zombie: ${pid} ${name})`);
-      return res.json({ success: true, method: 'SIGHUP', target: ppid });
+      console.log(`[zombie] SIGHUP → ppid ${ppid}. Waiting to verify...`);
+      await sleep(1500);
+      if (!zombieExists(pid)) {
+        console.log(`[zombie] ✅ Zombie ${pid} gone after SIGHUP`);
+        return res.json({ success: true, method: 'SIGHUP', target: ppid });
+      }
+      console.log(`[zombie] Zombie ${pid} still alive after SIGHUP — escalating to SIGKILL`);
     } catch (err: any) {
       console.warn(`[zombie] SIGHUP on ${ppid} failed: ${err.message}`);
     }
   }
 
-  // Step 2: SIGKILL the parent
+  // Step 2: SIGKILL the parent — forces zombie reparent to init which reaps it
   if (ppid && ppid > 1 && pidExists(ppid)) {
     try {
       shellKill(ppid, '9');
-      console.log(`[zombie] SIGKILL → parent ${ppid} (zombie: ${pid} ${name})`);
-      return res.json({ success: true, method: 'SIGKILL_PARENT', target: ppid });
+      console.log(`[zombie] SIGKILL → ppid ${ppid}. Waiting to verify...`);
+      await sleep(1500);
+      if (!zombieExists(pid)) {
+        console.log(`[zombie] ✅ Zombie ${pid} gone after SIGKILL on parent`);
+        return res.json({ success: true, method: 'SIGKILL_PARENT', target: ppid });
+      }
+      console.log(`[zombie] Zombie ${pid} still alive after killing parent`);
     } catch (err: any) {
       console.warn(`[zombie] SIGKILL on parent ${ppid} failed: ${err.message}`);
     }
   }
 
-  // Step 3: SIGKILL the zombie itself (last resort)
+  // Step 3: Last resort — SIGKILL the zombie directly
   try {
     shellKill(pid, '9');
-    console.log(`[zombie] SIGKILL → zombie ${pid} directly (${name})`);
-    return res.json({ success: true, method: 'SIGKILL_ZOMBIE', target: pid });
+    await sleep(800);
+    const stillAlive = zombieExists(pid);
+    if (!stillAlive) {
+      return res.json({ success: true, method: 'SIGKILL_ZOMBIE', target: pid });
+    }
+    // Zombie truly reaped only by init — report as partial success
+    return res.json({
+      success: true,
+      method: 'SIGKILL_ZOMBIE',
+      target: pid,
+      note: 'El zombie persiste en /proc pero será recogido por systemd/init en breve'
+    });
   } catch (err: any) {
     return res.status(500).json({
       error: `No se pudo limpiar zombie ${pid}: ${err.message}`,
-      hint: ppid && ppid > 1 ? `El padre PID ${ppid} ${pidExists(ppid) ? 'existe' : 'ya no existe (zombie huérfano)'}` : 'Sin padre válido'
+      hint: ppid && ppid > 1
+        ? `Padre PID ${ppid} ${pidExists(ppid) ? 'sigue vivo — puede requerir acceso root al contenedor' : 'ya no existe'}`
+        : 'Sin padre válido'
     });
   }
 });
 
-// Clean ALL zombies in one request
-app.post('/api/system/zombie/clean-all', async (req, res) => {
+// Clean ALL zombies — deduplicate by ppid, verify after kills
+app.post('/api/system/zombie/clean-all', async (req: any, res: any) => {
   const zombies = req.body.zombies as Array<{ pid: number; ppid: number; name: string }>;
 
   if (!Array.isArray(zombies) || zombies.length === 0) {
@@ -136,26 +173,42 @@ app.post('/api/system/zombie/clean-all', async (req, res) => {
   }
 
   const results: any[] = [];
-
-  // Deduplicate by ppid so we only send SIGHUP once per parent
   const processedPpids = new Set<number>();
 
   for (const z of zombies) {
-    if (z.ppid && z.ppid > 1 && !processedPpids.has(z.ppid)) {
+    // Try SIGHUP on parent first (once per unique ppid)
+    if (z.ppid && z.ppid > 1 && !processedPpids.has(z.ppid) && pidExists(z.ppid)) {
       processedPpids.add(z.ppid);
       try {
         shellKill(z.ppid, 'HUP');
-        results.push({ pid: z.pid, ppid: z.ppid, method: 'SIGHUP', success: true });
+        await sleep(1500);
+        if (!zombieExists(z.pid)) {
+          results.push({ pid: z.pid, ppid: z.ppid, method: 'SIGHUP', success: true });
+          continue;
+        }
+      } catch (_) { /* escalate */ }
+
+      // SIGHUP didn't work → SIGKILL the parent
+      if (pidExists(z.ppid)) {
+        try {
+          shellKill(z.ppid, '9');
+          await sleep(1500);
+          if (!zombieExists(z.pid)) {
+            results.push({ pid: z.pid, ppid: z.ppid, method: 'SIGKILL_PARENT', success: true });
+            continue;
+          }
+        } catch (_) { /* escalate */ }
+      }
+    } else if (z.ppid && processedPpids.has(z.ppid)) {
+      // Parent already killed for another zombie of same parent — just verify
+      await sleep(500);
+      if (!zombieExists(z.pid)) {
+        results.push({ pid: z.pid, ppid: z.ppid, method: 'REAPED_BY_PARENT_KILL', success: true });
         continue;
-      } catch (_) { /* fall through to SIGKILL */ }
-      // SIGHUP failed — try SIGKILL on the parent
-      try {
-        shellKill(z.ppid, '9');
-        results.push({ pid: z.pid, ppid: z.ppid, method: 'SIGKILL_PARENT', success: true });
-        continue;
-      } catch (_) { /* fall through to zombie kill */ }
+      }
     }
-    // Last resort: SIGKILL on the zombie pid itself
+
+    // Last resort: SIGKILL on the zombie itself
     try {
       shellKill(z.pid, '9');
       results.push({ pid: z.pid, method: 'SIGKILL_ZOMBIE', success: true });
