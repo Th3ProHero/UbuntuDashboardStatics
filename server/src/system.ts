@@ -86,16 +86,26 @@ export async function getSystemMetrics() {
     },
     loadAverage: loadAvg,
     uptime: si.time().uptime,
-    processes: cachedProcesses.list.slice(0, 50).map((p: any) => ({
-      pid: p.pid,
-      ppid: p.parentPid ?? p.ppid ?? 0,
-      name: p.name,
-      cpu: p.cpu,
-      mem: p.mem,
-      user: p.user,
-      started: p.started,
-      state: p.state
-    })),
+    processes: (() => {
+      const mapProcess = (p: any) => ({
+        pid: p.pid,
+        ppid: p.parentPid ?? p.ppid ?? 0,
+        name: p.name,
+        cpu: p.cpu,
+        mem: p.mem,
+        user: p.user,
+        started: p.started,
+        state: p.state
+      });
+      // Top 50 by CPU (already sorted by systeminformation)
+      const top50 = cachedProcesses.list.slice(0, 50);
+      const top50Pids = new Set(top50.map((p: any) => p.pid));
+      // Zombies not already in top 50 (CPU=0 so they'd never appear otherwise)
+      const extraZombies = cachedProcesses.list.filter(
+        (p: any) => (p.state === 'Z' || p.state === 'zombie') && !top50Pids.has(p.pid)
+      );
+      return [...top50, ...extraZombies].map(mapProcess);
+    })(),
     zombieCount: cachedProcesses.list.filter((p: any) => p.state === 'Z' || p.state === 'zombie').length
   };
 
