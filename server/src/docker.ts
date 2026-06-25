@@ -3,22 +3,30 @@ import Docker from 'dockerode';
 // Connect to the local Docker daemon
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
+// Cache docker stats to avoid heavy polling every second
+const containerStatsCache: Record<string, { stats: any, timestamp: number }> = {};
+
 export async function getDockerContainers() {
   try {
     const containers = await docker.listContainers({ all: true });
     
-    // Get stats for running containers (this is a simplified approach,
-    // getting stats for all containers every second could be heavy, but we'll try)
+    const now = Date.now();
+
     const containerDetails = await Promise.all(
       containers.map(async (c) => {
-        const container = docker.getContainer(c.Id);
         let stats: any = null;
         if (c.State === 'running') {
-          try {
-            // we use stream: false to just get one sample
-            stats = await container.stats({ stream: false });
-          } catch (e) {
-            // ignore
+          const cached = containerStatsCache[c.Id];
+          if (cached && (now - cached.timestamp < 3000)) {
+            stats = cached.stats;
+          } else {
+            try {
+              const container = docker.getContainer(c.Id);
+              stats = await container.stats({ stream: false });
+              containerStatsCache[c.Id] = { stats, timestamp: now };
+            } catch (e) {
+              // ignore
+            }
           }
         }
         

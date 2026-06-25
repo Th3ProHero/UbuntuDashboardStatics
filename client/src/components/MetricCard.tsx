@@ -10,7 +10,7 @@ interface MetricCardProps {
   colorClass?: string;
 }
 
-export function MetricCard({ title, value, unit, icon, trend, trendLabel, colorClass = "text-accent" }: MetricCardProps) {
+export const MetricCard = React.memo(function MetricCard({ title, value, unit, icon, trend, trendLabel, colorClass = "text-accent" }: MetricCardProps) {
   return (
     <div className="glass-card p-5 flex flex-col justify-between h-full">
       <div className="flex items-center justify-between mb-4">
@@ -37,4 +37,4 @@ export function MetricCard({ title, value, unit, icon, trend, trendLabel, colorC
       </div>
     </div>
   );
-}
+});

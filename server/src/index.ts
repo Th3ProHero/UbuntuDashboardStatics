@@ -50,13 +50,116 @@ app.post('/api/system/process/:pid/kill', (req, res) => {
   try {
     const pid = parseInt(req.params.pid, 10);
     if (isNaN(pid)) throw new Error('Invalid PID');
-    
-    // Attempt to kill process using node's process.kill
-    // Signal 9 is SIGKILL
     process.kill(pid, 'SIGKILL');
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to kill process' });
+  }
+});
+
+// Clean a zombie process: try kill -HUP on parent first, fallback to kill -9 on zombie pid
+app.post('/api/system/zombie/clean', (req, res) => {
+  const { pid, ppid, name } = req.body as { pid: number; ppid: number; name: string };
+
+  if (!pid || isNaN(pid)) {
+    return res.status(400).json({ error: 'Invalid PID' });
+  }
+
+  // Try SIGHUP on parent first (asks parent to reload/reap children)
+  if (ppid && ppid > 1) {
+    try {
+      process.kill(ppid, 'SIGHUP');
+      console.log(`[zombie] Sent SIGHUP to parent ${ppid} of zombie ${pid} (${name})`);
+      return res.json({ success: true, method: 'SIGHUP', target: ppid });
+    } catch (err: any) {
+      console.warn(`[zombie] SIGHUP on parent ${ppid} failed: ${err.message}. Falling back to SIGKILL on zombie.`);
+    }
+  }
+
+  // Fallback: SIGKILL on the zombie itself (may not work for true zombie but cleans up)
+  try {
+    process.kill(pid, 'SIGKILL');
+    console.log(`[zombie] Sent SIGKILL to zombie pid ${pid} (${name})`);
+    return res.json({ success: true, method: 'SIGKILL', target: pid });
+  } catch (err: any) {
+    return res.status(500).json({ error: `Failed to clean zombie ${pid}: ${err.message}` });
+  }
+});
+
+// Clean ALL zombies in one request
+app.post('/api/system/zombie/clean-all', async (req, res) => {
+  const zombies = req.body.zombies as Array<{ pid: number; ppid: number; name: string }>;
+
+  if (!Array.isArray(zombies) || zombies.length === 0) {
+    return res.status(400).json({ error: 'No zombie list provided' });
+  }
+
+  const results: any[] = [];
+
+  // Deduplicate by ppid so we only send SIGHUP once per parent
+  const processedPpids = new Set<number>();
+
+  for (const z of zombies) {
+    if (z.ppid && z.ppid > 1 && !processedPpids.has(z.ppid)) {
+      processedPpids.add(z.ppid);
+      try {
+        process.kill(z.ppid, 'SIGHUP');
+        results.push({ pid: z.pid, ppid: z.ppid, method: 'SIGHUP', success: true });
+        continue;
+      } catch (_) { /* fall through */ }
+    }
+    // Fallback SIGKILL
+    try {
+      process.kill(z.pid, 'SIGKILL');
+      results.push({ pid: z.pid, method: 'SIGKILL', success: true });
+    } catch (err: any) {
+      results.push({ pid: z.pid, success: false, error: err.message });
+    }
+  }
+
+  res.json({ success: true, results });
+});
+
+// Health-status endpoint: aggregates real-time alerts from current metrics
+app.get('/api/health-status', async (req, res) => {
+  try {
+    const { getSystemMetrics } = await import('./system');
+    const metrics = await getSystemMetrics();
+    const alerts: Array<{ level: 'danger' | 'warning' | 'ok'; message: string }> = [];
+
+    if (metrics.cpu.load > 80) {
+      alerts.push({ level: 'danger', message: `CPU alta: ${metrics.cpu.load.toFixed(1)}% de uso` });
+    }
+    if (metrics.memory.percent > 85) {
+      alerts.push({ level: 'danger', message: `RAM crítica: ${metrics.memory.percent.toFixed(1)}% utilizada` });
+    }
+    if (metrics.disk.root.percent > 85) {
+      alerts.push({ level: 'warning', message: `Disco raíz al ${metrics.disk.root.percent.toFixed(1)}% de capacidad` });
+    }
+    if (metrics.disk.root.percent > 95) {
+      alerts.push({ level: 'danger', message: `⚠️ Disco raíz CRÍTICO: ${metrics.disk.root.percent.toFixed(1)}%` });
+    }
+    if (metrics.zombieCount > 0) {
+      alerts.push({ level: 'warning', message: `${metrics.zombieCount} proceso(s) zombie detectado(s)` });
+    }
+    if (metrics.memory.swapPercent > 50) {
+      alerts.push({ level: 'warning', message: `Swap elevado: ${metrics.memory.swapPercent.toFixed(1)}% usado` });
+    }
+
+    res.json({
+      healthy: alerts.length === 0,
+      alertCount: alerts.length,
+      alerts,
+      snapshot: {
+        cpu: metrics.cpu.load,
+        ram: metrics.memory.percent,
+        disk: metrics.disk.root.percent,
+        zombies: metrics.zombieCount,
+        swap: metrics.memory.swapPercent
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to get health status' });
   }
 });
 
