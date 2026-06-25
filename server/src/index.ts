@@ -7,11 +7,21 @@ import { getSystemMetrics, getHistoricalMetrics } from './system';
 import { getDockerContainers, performDockerAction } from './docker';
 import { initializeDatabase } from './db';
 import { getCloudflareTunnels, getCloudflareZones, getCloudflareDnsRecords } from './cloudflare';
-import { spawn, execSync } from 'child_process';
+import { spawn, execSync, exec } from 'child_process';
 
-// Helper: send a signal to a PID via the system kill binary (works cross-user in privileged containers)
-function shellKill(pid: number, signal: string): void {
-  execSync(`kill -${signal} ${pid}`);
+// Helper: send a signal via the OS kill binary (works cross-user in privileged containers)
+function shellKill(pid: number, signal: string | number): void {
+  execSync(`kill -${signal} ${pid}`, { stdio: 'pipe' });
+}
+
+// Helper: check if a PID is alive
+function pidExists(pid: number): boolean {
+  try {
+    execSync(`kill -0 ${pid}`, { stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const app = express();
@@ -62,7 +72,19 @@ app.post('/api/system/process/:pid/kill', (req, res) => {
   }
 });
 
-// Clean a zombie process: try kill -HUP on parent first, fallback to kill -9 on zombie pid
+// Diagnostic: get info about a specific PID from the host OS
+app.get('/api/system/zombie/info/:pid', (req, res) => {
+  const pid = parseInt(req.params.pid, 10);
+  if (isNaN(pid)) return res.status(400).json({ error: 'Invalid PID' });
+  try {
+    const out = execSync(`ps -p ${pid} -o pid,ppid,user,stat,comm --no-headers 2>/dev/null || echo 'NOT_FOUND'`, { stdio: 'pipe' }).toString().trim();
+    res.json({ pid, info: out });
+  } catch (e: any) {
+    res.json({ pid, info: 'NOT_FOUND', error: e.message });
+  }
+});
+
+// Clean a zombie: SIGHUP parent → SIGKILL parent → SIGKILL zombie (all via OS kill binary)
 app.post('/api/system/zombie/clean', (req, res) => {
   const { pid, ppid, name } = req.body as { pid: number; ppid: number; name: string };
 
@@ -70,31 +92,38 @@ app.post('/api/system/zombie/clean', (req, res) => {
     return res.status(400).json({ error: 'Invalid PID' });
   }
 
-  // Try SIGHUP on parent first (asks parent to reload/reap children)
-  if (ppid && ppid > 1) {
+  // Step 1: Try SIGHUP on parent
+  if (ppid && ppid > 1 && pidExists(ppid)) {
     try {
       shellKill(ppid, 'HUP');
-      console.log(`[zombie] Sent SIGHUP to parent ${ppid} of zombie ${pid} (${name})`);
+      console.log(`[zombie] SIGHUP → parent ${ppid} (zombie: ${pid} ${name})`);
       return res.json({ success: true, method: 'SIGHUP', target: ppid });
     } catch (err: any) {
-      console.warn(`[zombie] SIGHUP on parent ${ppid} failed: ${err.message}. Falling back to SIGKILL.`);
+      console.warn(`[zombie] SIGHUP on ${ppid} failed: ${err.message}`);
     }
   }
 
-  // Fallback: SIGKILL on parent or zombie itself
-  try {
-    // Try killing the parent with SIGKILL first
-    if (ppid && ppid > 1) {
+  // Step 2: SIGKILL the parent
+  if (ppid && ppid > 1 && pidExists(ppid)) {
+    try {
       shellKill(ppid, '9');
-      console.log(`[zombie] Sent SIGKILL to parent ${ppid} of zombie ${pid} (${name})`);
-      return res.json({ success: true, method: 'SIGKILL', target: ppid });
+      console.log(`[zombie] SIGKILL → parent ${ppid} (zombie: ${pid} ${name})`);
+      return res.json({ success: true, method: 'SIGKILL_PARENT', target: ppid });
+    } catch (err: any) {
+      console.warn(`[zombie] SIGKILL on parent ${ppid} failed: ${err.message}`);
     }
-    // Last resort: kill the zombie pid directly
+  }
+
+  // Step 3: SIGKILL the zombie itself (last resort)
+  try {
     shellKill(pid, '9');
-    console.log(`[zombie] Sent SIGKILL to zombie pid ${pid} (${name})`);
-    return res.json({ success: true, method: 'SIGKILL', target: pid });
+    console.log(`[zombie] SIGKILL → zombie ${pid} directly (${name})`);
+    return res.json({ success: true, method: 'SIGKILL_ZOMBIE', target: pid });
   } catch (err: any) {
-    return res.status(500).json({ error: `Failed to clean zombie ${pid}: ${err.message}` });
+    return res.status(500).json({
+      error: `No se pudo limpiar zombie ${pid}: ${err.message}`,
+      hint: ppid && ppid > 1 ? `El padre PID ${ppid} ${pidExists(ppid) ? 'existe' : 'ya no existe (zombie huérfano)'}` : 'Sin padre válido'
+    });
   }
 });
 
@@ -219,22 +248,23 @@ io.on('connection', (socket) => {
   
   socket.on('update_server', () => {
     console.log('Server update requested');
-    // Using chroot to run apt within the mounted host root
-    // Requires privileged container mode
-    const updateProcess = spawn('chroot', ['/host/root', 'apt-get', 'update', '&&', 'apt-get', 'upgrade', '-y'], {
-      shell: true
-    });
+    // Use exec with a callback so Node.js properly reaps the child process
+    // (avoids [spawn-unnamed] zombie accumulation)
+    const child = exec(
+      'chroot /host/root apt-get update && chroot /host/root apt-get upgrade -y',
+      { maxBuffer: 10 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        const code = error?.code ?? 0;
+        socket.emit('server_update_logs', `\n--- Update process exited with code ${code} ---\n`);
+      }
+    );
 
-    updateProcess.stdout.on('data', (data) => {
+    child.stdout?.on('data', (data: string) => {
       socket.emit('server_update_logs', data.toString());
     });
 
-    updateProcess.stderr.on('data', (data) => {
+    child.stderr?.on('data', (data: string) => {
       socket.emit('server_update_logs', data.toString());
-    });
-
-    updateProcess.on('close', (code) => {
-      socket.emit('server_update_logs', `\n--- Update process exited with code ${code} ---\n`);
     });
   });
 
